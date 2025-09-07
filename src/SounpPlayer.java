@@ -1,18 +1,38 @@
-import javax.sound.sampled.*;
-import java.io.File;
+package src;
 
-public class Soundplayer {
-    public static void playSound(String filePath) {
-        try {
-            File file = new File(filePath);
-            AudioInputStream audioStream = AudioSystem.getAudioInputStream(file);
-            Clip clip = AudioSystem.getClip();
-            clip.open(audioStream);
-            clip.start();
+import javazoom.jl.player.Player;
+import java.io.FileInputStream;
+import java.io.BufferedInputStream;
 
-            Thread.sleep(clip.getMicrosecondLength() / 1000);
-        } catch (Exception e) {
-            System.out.println("Error playing sound: " + e.getMessage());
-        }
+public class SoundPlayer {
+
+    private String filePath;
+
+    public SoundPlayer(String filePath) {
+        this.filePath = filePath;
+    }
+
+    // Play the sound asynchronously
+    public void play() {
+        new Thread(() -> {
+            try (FileInputStream fis = new FileInputStream(filePath);
+                 BufferedInputStream bis = new BufferedInputStream(fis)) {
+
+                Player player = new Player(bis);
+                player.play();
+
+            } catch (Exception e) {
+                System.out.println("Error playing sound: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    // Example usage
+    public static void main(String[] args) {
+        SoundPlayer correctSound = new SoundPlayer("sounds/correct.mp3");
+        SoundPlayer wrongSound = new SoundPlayer("sounds/wrong.mp3");
+
+        correctSound.play();  // plays first sound
+        wrongSound.play();    // can play simultaneously
     }
 }
