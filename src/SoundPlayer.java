@@ -1,3 +1,4 @@
+
 package src;
 
 import javazoom.jl.player.Player;
@@ -7,6 +8,8 @@ import java.io.BufferedInputStream;
 public class SoundPlayer {
 
     private String filePath;
+    private Player player;
+    private Thread playThread;
 
     public SoundPlayer(String filePath) {
         this.filePath = filePath;
@@ -14,25 +17,31 @@ public class SoundPlayer {
 
     // Play the sound asynchronously
     public void play() {
-        new Thread(() -> {
+        playThread = new Thread(() -> {
             try (FileInputStream fis = new FileInputStream(filePath);
                  BufferedInputStream bis = new BufferedInputStream(fis)) {
 
-                Player player = new Player(bis);
+                player = new Player(bis);
                 player.play();
 
             } catch (Exception e) {
                 System.out.println("Error playing sound: " + e.getMessage());
             }
-        }).start();
+        });
+        playThread.start();
     }
 
-    // Example usage
-    public static void main(String[] args) {
-        SoundPlayer correctSound = new SoundPlayer("sounds/correct.mp3");
-        SoundPlayer wrongSound = new SoundPlayer("sounds/wrong.mp3");
-
-        correctSound.play();  // plays first sound
-        wrongSound.play();    // can play simultaneously
+    // Stop the sound if it's still playing
+    public void stop() {
+        try {
+            if (player != null) {
+                player.close(); // this stops playback
+            }
+            if (playThread != null && playThread.isAlive()) {
+                playThread.interrupt();
+            }
+        } catch (Exception e) {
+            System.out.println("Error stopping sound: " + e.getMessage());
+        }
     }
 }
