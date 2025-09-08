@@ -59,6 +59,9 @@ public class GameManager {
                     }
                 }
 
+                // ✅ Stop sound immediately after answering
+                player.stop();
+
                 // Check answer
                 if (optsList.get(choice - 1).equalsIgnoreCase(q.getCorrectAnswer())) {
                     System.out.println("✅ Correct!\n");
