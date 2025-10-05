@@ -1,348 +1,259 @@
 package src;
 
-import javafx.animation.*;
 import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.effect.DropShadow;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
-import javafx.scene.paint.Color;
-import javafx.scene.shape.Circle;
-import javafx.scene.text.Font;
 import javafx.stage.Stage;
-import javafx.util.Duration;
-import javazoom.jl.player.Player;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.util.*;
+import java.util.concurrent.*;
 
 public class SoundMatchApp extends Application {
 
-    private Stage window;
-    private Scene welcomeScene, gameScene;
-    private StackPane gameLayout;
-
-    private Label scoreLabel;
+    private List<Question> questions = new ArrayList<>();
+    private List<Question> currentQuestions;
+    private Question currentQuestion;
+    private int currentQuestionIndex = 0;
     private int score = 0;
-    private int questionIndex = 0;
 
-    private List<String> imageFiles;
-    private List<String> soundFiles;
-    private String currentSound;
-    private Random random = new Random();
+    private BorderPane root = new BorderPane();
+    private Label scoreLabel;
+    private Button playSoundButton;
+    private GridPane optionsGrid;
+    private List<Button> optionButtons = new ArrayList<>();
 
-    private Player currentPlayer;
-    private Thread soundThread;
+    private static final int NUM_OPTIONS = 3;
+    private static final int GAME_QUESTION_LIMIT = 10;
 
-    private List<Color> bgColors = Arrays.asList(Color.LIGHTBLUE, Color.LIGHTPINK, Color.LIGHTYELLOW, Color.LIGHTGREEN, Color.LIGHTCORAL);
+    private SoundPlayer soundPlayer = new SoundPlayer(); // Your SoundPlayer
 
     @Override
     public void start(Stage primaryStage) {
-        window = primaryStage;
-        loadAssets();
+        loadQuestions();
 
-        Label welcomeLabel = new Label("🎵 Sound Match Game 🎵");
-        welcomeLabel.setFont(Font.font("Comic Sans MS", 36));
-        welcomeLabel.setTextFill(Color.DARKGREEN);
+        Scene scene = new Scene(root, 900, 700);
+        try {
+            String cssPath = "file:" + System.getProperty("user.dir") + "/game-styles.css";
+            scene.getStylesheets().add(cssPath);
+        } catch (Exception e) {
+            System.err.println("CSS file not found: " + e.getMessage());
+        }
 
-        Button startButton = new Button("Start Game");
-        startButton.setStyle("-fx-background-color: lightgreen; -fx-font-size: 24px; -fx-padding: 15px;");
-        startButton.setOnAction(e -> startGame());
+        primaryStage.setTitle("Sound Match Game");
+        primaryStage.setScene(scene);
+        primaryStage.show();
 
-        VBox welcomeLayout = new VBox(30, welcomeLabel, startButton);
-        welcomeLayout.setAlignment(Pos.CENTER);
-        welcomeLayout.setStyle("-fx-background-color: linear-gradient(to bottom, #e0ffe0, #c0ffc0);");
-
-        welcomeScene = new Scene(welcomeLayout, 480, 800);
-
-        window.setScene(welcomeScene);
-        window.setTitle("Sound Match Game");
-        window.show();
+        showWelcomeScreen();
     }
 
-    private void loadAssets() {
-        imageFiles = new ArrayList<>();
-        soundFiles = new ArrayList<>();
+    private void loadQuestions() {
+        questions.add(new Question("ambulance.mp3", new String[]{"ambulance", "train", "rickshaw"}, "ambulance"));
+        questions.add(new Question("bike.mp3", new String[]{"car", "bike", "jcb"}, "bike"));
+        questions.add(new Question("lionroaring.mp3", new String[]{"catmeowing", "dogbarking", "lionroaring"}, "lionroaring"));
+        questions.add(new Question("car.mp3", new String[]{"bike", "car", "jcb"}, "car"));
+        questions.add(new Question("rainfall.mp3", new String[]{"rainfall", "oceanwaves", "thunderstorm"}, "rainfall"));
+        questions.add(new Question("cellphone-ringing.mp3", new String[]{"cellphone-ringing", "jeep", "doorbell"}, "cellphone-ringing"));
+        questions.add(new Question("clapping.mp3", new String[]{"violin", "clapping", "laughing"}, "clapping"));
+        questions.add(new Question("coughing.mp3", new String[]{"sneezing", "laughing", "coughing"}, "coughing"));
+        questions.add(new Question("cowmooing.mp3", new String[]{"dogbarking", "cowmooing", "lionroaring"}, "cowmooing"));
+        questions.add(new Question("crying.mp3", new String[]{"oceanwaves", "laughing", "crying"}, "crying"));
+    }
 
-        File imageFolder = new File("assets/images");
-        if (imageFolder.exists()) {
-            for (File file : imageFolder.listFiles()) {
-                if (file.getName().endsWith(".jpg") || file.getName().endsWith(".png")) {
-                    imageFiles.add(file.getAbsolutePath());
-                }
-            }
-        }
+    private void showWelcomeScreen() {
+        Label welcomeLabel = new Label("Welcome to Sound Match Game 🎵");
+        welcomeLabel.setStyle("-fx-font-size: 28px; -fx-font-weight: bold;");
+        Button startGameButton = new Button("Start Game");
+        startGameButton.setOnAction(e -> startGame());
 
-        File soundFolder = new File("sounds");
-        if (soundFolder.exists()) {
-            for (File file : soundFolder.listFiles()) {
-                if (file.getName().endsWith(".mp3") || file.getName().endsWith(".wav")) {
-                    soundFiles.add(file.getAbsolutePath());
-                }
-            }
-        }
+        VBox layout = new VBox(50, welcomeLabel, startGameButton);
+        layout.setAlignment(Pos.CENTER);
+        root.setTop(null);
+        root.setBottom(createExitButton());
+        root.setCenter(layout);
     }
 
     private void startGame() {
-        gameLayout = new StackPane();
-        changeBackgroundColor();
-
-        scoreLabel = new Label("Score: 0");
-        scoreLabel.setFont(Font.font("Comic Sans MS", 36));
-        scoreLabel.setTextFill(Color.DARKBLUE);
-        scoreLabel.setStyle("-fx-background-color: white; -fx-background-radius: 20px; -fx-padding: 15px;");
-        scoreLabel.setEffect(new DropShadow(10, Color.BLACK));
-
-        ScaleTransition pulse = new ScaleTransition(Duration.millis(800), scoreLabel);
-        pulse.setFromX(1);
-        pulse.setFromY(1);
-        pulse.setToX(1.2);
-        pulse.setToY(1.2);
-        pulse.setCycleCount(Animation.INDEFINITE);
-        pulse.setAutoReverse(true);
-        pulse.play();
-
-        gameLayout.getChildren().add(scoreLabel);
-        StackPane.setAlignment(scoreLabel, Pos.TOP_CENTER);
-
-        nextQuestion();
-
-        gameScene = new Scene(gameLayout, 480, 800);
-        window.setScene(gameScene);
+        score = 0;
+        currentQuestionIndex = 0;
+        Collections.shuffle(questions);
+        currentQuestions = questions.subList(0, Math.min(GAME_QUESTION_LIMIT, questions.size()));
+        root.setTop(createScoreBar());
+        root.setCenter(createGameContent());
+        root.setBottom(createExitButton());
+        loadNextQuestion();
     }
 
-    private void changeBackgroundColor() {
-        Color newColor = bgColors.get(random.nextInt(bgColors.size()));
-        gameLayout.setStyle("-fx-background-color: " + toRgbString(newColor) + ";");
+    private void showGameOverScreen() {
+        Label finalScore = new Label("Game Over! Final Score: " + score + " / " + currentQuestions.size());
+        finalScore.setStyle("-fx-font-size: 24px; -fx-font-weight: bold;");
+
+        Button restartButton = new Button("Restart Game");
+        restartButton.setOnAction(e -> startGame());
+
+        Button exitButton = new Button("Exit Game");
+        exitButton.setOnAction(e -> Platform.exit());
+
+        HBox buttonBox = new HBox(20, restartButton, exitButton);
+        buttonBox.setAlignment(Pos.CENTER);
+
+        VBox layout = new VBox(30, finalScore, buttonBox);
+        layout.setAlignment(Pos.CENTER);
+
+        root.setCenter(layout);
     }
 
-    private String toRgbString(Color c) {
-        return String.format("rgb(%d, %d, %d)",
-                (int)(c.getRed()*255),
-                (int)(c.getGreen()*255),
-                (int)(c.getBlue()*255));
+    private HBox createScoreBar() {
+        scoreLabel = new Label("Score: 0 / " + GAME_QUESTION_LIMIT);
+        scoreLabel.setId("score-label");
+
+        HBox topBar = new HBox(scoreLabel);
+        topBar.setAlignment(Pos.CENTER_LEFT);
+        topBar.setPadding(new Insets(20));
+        return topBar;
     }
 
-    private void nextQuestion() {
-        if (questionIndex >= 10) {
-            showFinalScore();
+    private Button createExitButton() {
+        Button exitButton = new Button("Exit Game");
+        exitButton.setId("exit-button");
+        exitButton.setOnAction(e -> Platform.exit());
+        return exitButton;
+    }
+
+    private VBox createGameContent() {
+        Image speakerImage = loadAssetImage("speaker", 80, 80);
+        playSoundButton = new Button("", new ImageView(speakerImage));
+        playSoundButton.setOnAction(e -> playCurrentSound());
+
+        optionsGrid = new GridPane();
+        optionsGrid.setAlignment(Pos.CENTER);
+        optionsGrid.setHgap(50);
+
+        optionButtons.clear();
+        for (int i = 0; i < NUM_OPTIONS; i++) {
+            Button btn = new Button();
+            btn.getStyleClass().add("option-button");
+            btn.setOnAction(e -> handleAnswer((Button) e.getSource()));
+            optionButtons.add(btn);
+            optionsGrid.add(btn, i, 0);
+        }
+
+        VBox centerLayout = new VBox(50, playSoundButton, optionsGrid);
+        centerLayout.setAlignment(Pos.CENTER);
+        return centerLayout;
+    }
+
+    private void playCurrentSound() {
+        if (currentQuestion != null) {
+            soundPlayer.play(System.getProperty("user.dir") + "/sounds/" + currentQuestion.getSoundFile());
+        }
+    }
+
+    private void handleAnswer(Button selectedButton) {
+        optionButtons.forEach(b -> b.setDisable(true));
+        String selectedAnswer = (String) selectedButton.getUserData();
+        boolean isCorrect = selectedAnswer.equalsIgnoreCase(currentQuestion.getCorrectAnswer());
+
+        if (isCorrect) {
+            score++;
+            selectedButton.setStyle("-fx-background-color: #4CAF50;"); // Green
+            soundPlayer.playSync(System.getProperty("user.dir") + "/sounds/correct.mp3");
+        } else {
+            selectedButton.setStyle("-fx-background-color: #F44336;"); // Red
+            soundPlayer.playSync(System.getProperty("user.dir") + "/sounds/wrong.mp3");
+            for (Button btn : optionButtons) {
+                if (btn.getUserData().equals(currentQuestion.getCorrectAnswer())) {
+                    btn.setStyle("-fx-background-color: #4CAF50;");
+                }
+            }
+        }
+
+        updateScoreLabel();
+
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+        executor.schedule(() -> Platform.runLater(() -> {
+            clearOptionStyles();
+            loadNextQuestion();
+        }), 2, TimeUnit.SECONDS);
+        executor.shutdown();
+    }
+
+    private void clearOptionStyles() {
+        for (Button btn : optionButtons) {
+            btn.setStyle(null);
+        }
+    }
+
+    private void loadNextQuestion() {
+        if (currentQuestionIndex >= currentQuestions.size()) {
+            showGameOverScreen();
             return;
         }
 
-        questionIndex++;
-        changeBackgroundColor();
-        stopSound();
+        currentQuestion = currentQuestions.get(currentQuestionIndex++);
+        List<String> optionsList = new ArrayList<>(Arrays.asList(currentQuestion.getOptions()));
+        Collections.shuffle(optionsList);
 
-        currentSound = soundFiles.get(random.nextInt(soundFiles.size()));
-        playSound(currentSound);
-
-        String correctImage = currentSound.replace("sounds", "assets/images")
-                .replace(".mp3", ".jpg")
-                .replace(".wav", ".jpg");
-
-        if (!new File(correctImage).exists()) {
-            correctImage = findMatchingImage(currentSound);
+        for (int i = 0; i < NUM_OPTIONS; i++) {
+            String optionName = optionsList.get(i);
+            Button btn = optionButtons.get(i);
+            Image optionImage = loadAssetImage(optionName, 140, 140);
+            btn.setGraphic(new ImageView(optionImage));
+            btn.setUserData(optionName);
+            btn.setDisable(false);
+            btn.setStyle(null);
         }
 
-        List<String> options = new ArrayList<>();
-        options.add(correctImage);
-
-        Set<String> usedImages = new HashSet<>();
-        usedImages.add(correctImage);
-
-        while (options.size() < Math.min(4, imageFiles.size())) {
-            String candidate = imageFiles.get(random.nextInt(imageFiles.size()));
-            if (!usedImages.contains(candidate)) {
-                options.add(candidate);
-                usedImages.add(candidate);
-            }
-        }
-
-        Collections.shuffle(options);
-        displayOptions(options, correctImage);
+        playCurrentSound();
     }
 
-    private String findMatchingImage(String soundPath) {
-        String soundName = new File(soundPath).getName();
-        String baseName = soundName.substring(0, soundName.lastIndexOf('.'));
-        for (String imgPath : imageFiles) {
-            String imgName = new File(imgPath).getName();
-            if (imgName.contains(baseName)) {
-                return imgPath;
-            }
-        }
-        return imageFiles.get(random.nextInt(imageFiles.size()));
+    private void updateScoreLabel() {
+        scoreLabel.setText("Score: " + score + " / " + currentQuestions.size());
     }
 
-    private void displayOptions(List<String> options, String correctImage) {
-        Pane circlePane = new Pane();
-        circlePane.setMinSize(480, 800);
-
-        double centerX = 240;
-        double centerY = 400;
-        double radius = 200;
-        int total = options.size();
-
-        for (int i = 0; i < total; i++) {
-            double angle = 2 * Math.PI * i / total;
-            double x = centerX + radius * Math.cos(angle) - 70;
-            double y = centerY + radius * Math.sin(angle) - 70;
-
-            ImageView img = new ImageView(new Image(new File(options.get(i)).toURI().toString()));
-            img.setFitHeight(140);
-            img.setFitWidth(140);
-
-            Button imgBtn = new Button();
-            imgBtn.setShape(new Circle(70));
-            imgBtn.setMinSize(140, 140);
-            imgBtn.setMaxSize(140, 140);
-            imgBtn.setGraphic(img);
-
-            Color optionColor = bgColors.get(random.nextInt(bgColors.size()));
-            imgBtn.setStyle("-fx-background-color: " + toRgbString(optionColor) + "; -fx-border-color: white; -fx-border-width: 3px;");
-
-            imgBtn.setLayoutX(x);
-            imgBtn.setLayoutY(y);
-
-            imgBtn.setOnMouseEntered(e -> imgBtn.setScaleX(1.1));
-            imgBtn.setOnMouseExited(e -> imgBtn.setScaleX(1));
-
-            final String finalCorrectImage = correctImage;
-            final String finalImagePath = options.get(i);
-
-            imgBtn.setOnAction(e -> {
-                stopSound();
-                playClickAnimation(imgBtn);
-                changeBackgroundColor();
-                if (finalImagePath.equals(finalCorrectImage)) {
-                    score++;
-                    scoreLabel.setText("Score: " + score);
-                    showFeedback("Correct ✅", Color.LIGHTGREEN);
-                } else {
-                    showFeedback("Wrong ❌", Color.PINK);
-                }
-            });
-
-            circlePane.getChildren().add(imgBtn);
-        }
-
-        Button exitBtn = new Button("Exit");
-        exitBtn.setStyle("-fx-background-color: lightcoral; -fx-font-size: 18px; -fx-padding: 10px;");
-        exitBtn.setOnAction(e -> {
-            stopSound();
-            showFinalScore();
-        });
-        exitBtn.setLayoutX(centerX - 30);
-        exitBtn.setLayoutY(centerY + radius + 20);
-        circlePane.getChildren().add(exitBtn);
-
-        gameLayout.getChildren().clear();
-        gameLayout.getChildren().addAll(circlePane, scoreLabel);
-
-        FadeTransition fade = new FadeTransition(Duration.millis(800), circlePane);
-        fade.setFromValue(0);
-        fade.setToValue(1);
-        fade.play();
-    }
-
-    private void showFeedback(String message, Color color) {
-        Label feedback = new Label(message);
-        feedback.setFont(Font.font("Comic Sans MS", 28));
-        feedback.setTextFill(color);
-
-        VBox feedbackBox = new VBox(feedback);
-        feedbackBox.setAlignment(Pos.CENTER);
-        feedbackBox.setStyle("-fx-background-color: #f5f5f5; -fx-padding: 10px; -fx-background-radius: 20px;");
-        gameLayout.getChildren().add(feedbackBox);
-        StackPane.setAlignment(feedbackBox, Pos.BOTTOM_CENTER);
-
-        new Timer().schedule(new TimerTask() {
-            @Override
-            public void run() {
-                javafx.application.Platform.runLater(() -> nextQuestion());
-            }
-        }, 1500);
-    }
-
-    private void playSound(String soundPath) {
-        stopSound();
-
-        soundThread = new Thread(() -> {
-            try {
-                FileInputStream fis = new FileInputStream(soundPath);
-                currentPlayer = new Player(fis);
-                currentPlayer.play();
-            } catch (Exception e) {
-                System.out.println("Error playing sound: " + e.getMessage());
-            }
-        });
-        soundThread.start();
-    }
-
-    private void stopSound() {
+    private Image loadAssetImage(String optionName, double width, double height) {
         try {
-            if (currentPlayer != null) currentPlayer.close();
-            if (soundThread != null && soundThread.isAlive()) soundThread.interrupt();
+            String imagePath = System.getProperty("user.dir") + "/assets/images/" + optionName.toLowerCase() + ".jpg";
+            return new Image("file:" + imagePath, width, height, true, true);
         } catch (Exception e) {
-            System.out.println("Error stopping sound: " + e.getMessage());
+            System.err.println("Image not found: " + optionName);
+            String placeholderPath = System.getProperty("user.dir") + "/assets/images/placeholder.jpg";
+            return new Image("file:" + placeholderPath, width, height, true, true);
         }
-    }
-
-    private void playClickAnimation(Button btn) {
-        ScaleTransition st = new ScaleTransition(Duration.millis(200), btn);
-        st.setFromX(1.0);
-        st.setFromY(1.0);
-        st.setToX(1.2);
-        st.setToY(1.2);
-        st.setAutoReverse(true);
-        st.setCycleCount(2);
-
-        RotateTransition rt = new RotateTransition(Duration.millis(400), btn);
-        rt.setByAngle(360);
-        rt.setCycleCount(1);
-
-        ParallelTransition pt = new ParallelTransition(st, rt);
-        pt.play();
-    }
-
-    private void showFinalScore() {
-        VBox finalBox = new VBox(30);
-        finalBox.setAlignment(Pos.CENTER);
-
-        Label finalLabel = new Label("🎯 Game Over! 🎯\nYour Score: " + score);
-        finalLabel.setFont(Font.font("Comic Sans MS", 36));
-        finalLabel.setTextFill(Color.DARKMAGENTA);
-
-        Button restartBtn = new Button("Restart Game");
-        restartBtn.setStyle("-fx-background-color: lightgreen; -fx-font-size: 22px;");
-        restartBtn.setOnAction(e -> {
-            score = 0;
-            questionIndex = 0;
-            startGame();
-        });
-
-        Button closeBtn = new Button("Close");
-        closeBtn.setStyle("-fx-background-color: lightcoral; -fx-font-size: 22px;");
-        closeBtn.setOnAction(e -> window.close());
-
-        finalBox.getChildren().addAll(finalLabel, restartBtn, closeBtn);
-        gameLayout.getChildren().clear();
-        gameLayout.getChildren().add(finalBox);
-
-        ScaleTransition scale = new ScaleTransition(Duration.millis(800), finalBox);
-        scale.setFromX(0.5);
-        scale.setFromY(0.5);
-        scale.setToX(1);
-        scale.setToY(1);
-        scale.play();
     }
 
     public static void main(String[] args) {
         launch(args);
+    }
+
+    static class Question {
+        private String soundFile;
+        private String[] options;
+        private String correctAnswer;
+
+        public Question(String soundFile, String[] options, String correctAnswer) {
+            this.soundFile = soundFile;
+            this.options = options;
+            this.correctAnswer = correctAnswer;
+        }
+
+        public String getSoundFile() {
+            return soundFile;
+        }
+
+        public String[] getOptions() {
+            return options;
+        }
+
+        public String getCorrectAnswer() {
+            return correctAnswer;
+        }
     }
 }
